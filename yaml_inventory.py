@@ -25,7 +25,11 @@ def create_symlinks(vars_path, group_vars_path):
             src_list = src[len(vars_path)+1:].split('/')
 
             # Keep only the top-level "all" file
-            if src_list[-1] == 'all' and len(src_list) > 1:
+            if src_list[-1] in ['all', 'all.vault'] and len(src_list) > 1:
+                # Keep the .vault extension
+                if src_list[-1] == 'all.vault':
+                    src_list[-2] += '.vault'
+
                 del src_list[-1]
 
             dst = "%s/%s" % (group_vars_path, '-'.join(src_list))
