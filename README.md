@@ -286,9 +286,11 @@ config file (`inventory_vars_path`) or via environment variable
 be disabled by setting the `create_symlinks` config option or the
 `YAML_INVENTORY_CREATE_SYMLINKS` environment variable to value `no`.
 
-If the group is the leaf of the inventory tree, the vars file should be
+The inventory vars file for a specific group can be called either like
+the last element of the group name or like `all` inside a directory
 called like the last element of the group name. If the group contains
-another group, the vars file should be called `all`.
+another groups, only the second option is available because there cannot
+coexist file and directory of the same name.
 
 If this is the inventory file:
 
@@ -313,6 +315,22 @@ inventory
     ├── [-rw-r--r--]  all
     └── [drwxr-xr-x]  dev
         └── [-rw-r--r--]  jenkins
+```
+
+The inventory vars are symlinked into the `group_vars` directory during
+the execution of the inventory script. The `group_vars` file names are
+based on the structure of the invetory vars directory. From the example
+above, the path `invenotory/aws/all` is symlinked like `group_vars/aws`
+and the path `invenotory/aws/dev/jenkins` is simliked like
+`group_vars/aws-dev-jenkins`.
+
+```
+$ ls -la ./group_vars
+total 8
+drwxr-xr-x 2 jtyr users 4096 Mar 28 17:20 .
+drwxr-xr-x 9 jtyr users 4096 Mar 27 10:10 ..
+lrwxrwxrwx 1 jtyr users   21 Mar 28 17:20 aws -> ../inventory/vars/aws/all
+lrwxrwxrwx 1 jtyr users   29 Mar 28 17:20 aws-dev-jenkins -> ../inventory/vars/aws/dev/jenkins
 ```
 
 
