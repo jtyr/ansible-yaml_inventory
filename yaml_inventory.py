@@ -18,13 +18,13 @@ import yaml
 log = logging.getLogger(__name__)
 
 
-def create_symlinks(vars_path, group_vars_path):
+def create_symlinks(vars_path, group_vars_path, inv):
     for root, dirs, files in os.walk(vars_path):
         for f in files:
             src = "%s/%s" % (root, f)
             src_list = src[len(vars_path)+1:].split('/')
 
-            # Ignore dotted files (e.g. ".git")
+            # Ignore dotted (e.g. ".git")
             if src_list[0].startswith('.'):
                 continue
 
@@ -36,27 +36,45 @@ def create_symlinks(vars_path, group_vars_path):
 
                 del src_list[-1]
 
-            dst = "%s/%s" % (group_vars_path, '-'.join(src_list))
+            src_list_s = '-'.join(src_list)
+            unused = True
 
-            # Make the source relative to the destination
-            src = os.path.relpath(src, os.path.dirname(dst))
+            dst = []
 
-            # Clear files and dirs of the same name
-            try:
-                if os.path.isdir(dst):
-                    os.rmdir(dst)
-                elif os.path.exists(dst) or os.path.lexists(dst):
-                    os.remove(dst)
-            except Exception as e:
-                log.error("E: Cannot delete %s.\n%s" % (dst, e))
-                sys.exit(1)
+            # Ignore files which are not groups
+            if src_list[0] != 'all':
+                if src_list_s in inv.keys():
+                    dst.append("%s/%s" % (group_vars_path, src_list_s))
 
-            # Create new symlink
-            try:
-                os.symlink(src, dst)
-            except Exception as e:
-                log.error("E: Cannot create symlink.\n%s" % e)
-                sys.exit(1)
+            # Add templates into the dst list
+            for ig in inv.keys():
+                if '@' in ig:
+                    g, t = ig.split('@')
+
+                    if t == src_list_s:
+                        dst.append("%s/%s" % (group_vars_path, ig))
+
+            # Create all destination symlinks
+            for d in dst:
+                # Make the source relative to the destination
+                s = os.path.relpath(src, os.path.dirname(d))
+
+                # Clear files and dirs of the same name
+                try:
+                    if os.path.isdir(d):
+                        os.rmdir(d)
+                    elif os.path.exists(d) or os.path.lexists(d):
+                        os.remove(d)
+                except Exception as e:
+                    log.error("E: Cannot delete %s.\n%s" % (d, e))
+                    sys.exit(1)
+
+                # Create new symlink
+                try:
+                    os.symlink(s, d)
+                except Exception as e:
+                    log.error("E: Cannot create symlink.\n%s" % e)
+                    sys.exit(1)
 
 
 def walk_yaml(inv, data, path=[], level=0):
@@ -82,7 +100,7 @@ def walk_yaml(inv, data, path=[], level=0):
                 'hosts': []
             }
 
-        # Initiate te group
+        # Initiate the group
         inv[group] = {
             'hosts': []
         }
@@ -92,28 +110,50 @@ def walk_yaml(inv, data, path=[], level=0):
             for k, v in gv.items():
                 if k[0] == ':':
                     # Non-group
-                    if k == ':hosts':
-                        for h in v:
-                            # Distinguish between list and str
-                            if isinstance(h, dict):
-                                inv[group]['hosts'].append(list(h.keys())[0])
-                                inv['_meta']['hostvars'].update(h)
-                            else:
-                                inv[group]['hosts'].append(h)
-                    elif k == ':vars':
-                        inv[group]['vars'] = v
-                    elif k == ':groups' and isinstance(v, list):
+                    if k == ':groups' and isinstance(v, list):
                         for g in v:
                             if g not in inv:
                                 inv[g] = {
                                     'hosts': []
                                 }
+                    elif k == ':hosts':
+                        for h in v:
+                            # Distinguish between list and str
+                            if isinstance(h, dict):
+                                inv[group]['hosts'].append(list(h.keys())[0])
+                                # Host with vars needs hostvars record
+                                inv['_meta']['hostvars'].update(h)
+                            else:
+                                inv[group]['hosts'].append(h)
+                    elif k == ':templates' and isinstance(v, list):
+                        for t in v:
+                            tg = "%s@%s" % (group, t)
+                            tgv = "%s.vault" % tg
+
+                            if tgv not in inv:
+                                inv[tg] = {
+                                    'children': ["%s.vault" % group]
+                                }
+                                inv[tgv] = {
+                                    'children': [tg]
+                                }
+                    elif k == ':vars':
+                        inv[group]['vars'] = v
                 else:
                     # Another subgroup
                     if 'children' not in inv[group]:
                         inv[group]['children'] = []
 
-                    inv[group]['children'].append('%s-%s.vault' % (group, k))
+                    if (
+                            v is not None and
+                            ':templates' in v and
+                            isinstance(v[':templates'], list)):
+                        for t in v[':templates']:
+                            inv[group]['children'].append(
+                                '%s-%s@%s.vault' % (group, k, t))
+                    else:
+                        inv[group]['children'].append(
+                            '%s-%s.vault' % (group, k))
             else:
                 # Add group hosts into the linked groups
                 if ':groups' in gv:
@@ -345,7 +385,7 @@ def main():
 
     # Create group_vars symlinks if enabled
     if symlinks:
-        create_symlinks(vars_path, group_vars_path)
+        create_symlinks(vars_path, group_vars_path, dyn_inv)
 
     # Get the host's vars if requested
     if args.host is not None:
