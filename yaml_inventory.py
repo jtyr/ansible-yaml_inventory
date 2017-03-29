@@ -24,6 +24,10 @@ def create_symlinks(vars_path, group_vars_path):
             src = "%s/%s" % (root, f)
             src_list = src[len(vars_path)+1:].split('/')
 
+            # Ignore dotted files (e.g. ".git")
+            if src_list[0].startswith('.'):
+                continue
+
             # Keep only the top-level "all" file
             if src_list[-1] in ['all', 'all.vault'] and len(src_list) > 1:
                 # Keep the .vault extension
