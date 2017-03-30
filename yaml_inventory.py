@@ -37,14 +37,11 @@ def create_symlinks(vars_path, group_vars_path, inv):
                 del src_list[-1]
 
             src_list_s = '-'.join(src_list)
-            unused = True
-
             dst = []
 
             # Ignore files which are not groups
-            if src_list[0] != 'all':
-                if src_list_s in inv.keys():
-                    dst.append("%s/%s" % (group_vars_path, src_list_s))
+            if src_list[0] == 'all' or src_list_s in inv.keys():
+                dst.append("%s/%s" % (group_vars_path, src_list_s))
 
             # Add templates into the dst list
             for ig in inv.keys():
@@ -77,22 +74,67 @@ def create_symlinks(vars_path, group_vars_path, inv):
                     sys.exit(1)
 
 
-def walk_yaml(inv, data, path=[], level=0):
+def read_vars_file(inv, group, vars_path, symlinks, vars_always=False):
+    g = group
+
+    # Get template name
+    if '@' in group:
+        _, g = group.split('@')
+
+    path = "%s/%s" % (vars_path, g.replace('-', '/'))
+    data = None
+
+    # Check if vars file exists
+    if os.path.isfile(path):
+        pass
+    elif os.path.isfile("%s/all" % path):
+        path += '/all'
+    else:
+        path = None
+
+    # Read the group file or the "all" file from the group dir if exists
+    if path is not None:
+        try:
+            data = yaml.load(read_yaml_file(path, False))
+        except yaml.YAMLError as e:
+            log.error("E: Cannot load YAML inventory vars file.\n%s" % e)
+            sys.exit(1)
+
+
+    # Create empty group if needed
+    if group not in inv:
+        inv[group] = {}
+
+    # Create empty vars if required
+    if (
+            (
+                vars_always or
+                (
+                    data is not None and
+                    not symlinks)) and
+            'vars' not in inv[group]):
+        inv[group]['vars'] = {}
+
+    # Update the vars with the file data if any
+    if data is not None and not symlinks:
+        inv[group]['vars'].update(data)
+
+
+def walk_yaml(inv, data, vars_path, symlinks, path=[], level=0):
     if data is None:
         return
 
     # Create vars for the "all" group if defined
     if level == 0 and ':vars' in data:
-        inv['all'] = {
-            'vars': data[':vars']
-        }
+        read_vars_file(inv, 'all', vars_path, symlinks, True)
+        inv['all']['vars'].update(data[':vars'])
 
     for gk, gv in dict((k, v) for k, v in data.items() if k[0] != ':').items():
         gpath = path + [gk]
         group = '-'.join(gpath)
 
         # Create vault group and make the real group as its child
-        if len(path):
+        if len(path) and symlinks:
             inv["%s.vault" % group] = {
                 'children': [
                     group
@@ -101,9 +143,8 @@ def walk_yaml(inv, data, path=[], level=0):
             }
 
         # Initiate the group
-        inv[group] = {
-            'hosts': []
-        }
+        read_vars_file(inv, group, vars_path, symlinks)
+        inv[group]['hosts'] = []
 
         # Walk through internal keys if any
         if gv is not None:
@@ -113,9 +154,8 @@ def walk_yaml(inv, data, path=[], level=0):
                     if k == ':groups' and isinstance(v, list):
                         for g in v:
                             if g not in inv:
-                                inv[g] = {
-                                    'hosts': []
-                                }
+                                read_vars_file(inv, g, vars_path, symlinks)
+                                inv[g]['hosts'] = []
                     elif k == ':hosts':
                         for h in v:
                             # Distinguish between list and str
@@ -130,30 +170,46 @@ def walk_yaml(inv, data, path=[], level=0):
                             tg = "%s@%s" % (group, t)
                             tgv = "%s.vault" % tg
 
+                            # Add templates as children
                             if tgv not in inv:
-                                inv[tg] = {
-                                    'children': ["%s.vault" % group]
-                                }
-                                inv[tgv] = {
-                                    'children': [tg]
-                                }
+                                read_vars_file(inv, tg, vars_path, symlinks)
+
+                                if symlinks:
+                                    inv[tg]['children'] = ["%s.vault" % group]
+                                    inv[tgv] = {
+                                        'children': [tg]
+                                    }
+                                else:
+                                    inv[tg]['children'] = [group]
                     elif k == ':vars':
+                        read_vars_file(inv, group, vars_path, symlinks)
                         inv[group]['vars'] = v
                 else:
                     # Another subgroup
                     if 'children' not in inv[group]:
                         inv[group]['children'] = []
 
+                    read_vars_file(inv, group, vars_path, symlinks)
+
+                    # Create extra template groups
                     if (
                             v is not None and
                             ':templates' in v and
                             isinstance(v[':templates'], list)):
                         for t in v[':templates']:
-                            inv[group]['children'].append(
-                                '%s-%s@%s.vault' % (group, k, t))
+                            if symlinks:
+                                inv[group]['children'].append(
+                                    '%s-%s@%s.vault' % (group, k, t))
+                            else:
+                                inv[group]['children'].append(
+                                    '%s-%s@%s' % (group, k, t))
                     else:
-                        inv[group]['children'].append(
-                            '%s-%s.vault' % (group, k))
+                        if symlinks:
+                            inv[group]['children'].append(
+                                '%s-%s.vault' % (group, k))
+                        else:
+                            inv[group]['children'].append(
+                                '%s-%s' % (group, k))
             else:
                 # Add group hosts into the linked groups
                 if ':groups' in gv:
@@ -163,10 +219,10 @@ def walk_yaml(inv, data, path=[], level=0):
                                 inv[g]['hosts'].append(h)
 
             # Walk the subgroup
-            walk_yaml(inv, gv, gpath, level+1)
+            walk_yaml(inv, gv, vars_path, symlinks, gpath, level+1)
 
 
-def read_yaml_file(f_path):
+def read_yaml_file(f_path, strip_hyphens=True):
     content = ''
 
     try:
@@ -176,7 +232,7 @@ def read_yaml_file(f_path):
         sys.exit(1)
 
     for line in f.readlines():
-        if not line.startswith('---'):
+        if not strip_hyphens or strip_hyphens and not line.startswith('---'):
             content += line
 
     try:
@@ -381,7 +437,9 @@ def main():
             dyn_inv,
             dict((k, v) for k, v in data.items() if (
                 k[0] != ':' or
-                k[0] != ':vars')))
+                k[0] != ':vars')),
+            vars_path,
+            symlinks)
 
     # Create group_vars symlinks if enabled
     if symlinks:
