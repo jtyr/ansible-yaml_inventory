@@ -211,12 +211,23 @@ def walk_yaml(inv, data, vars_path, symlinks, path=[], level=0):
                             inv[group]['children'].append(
                                 '%s-%s' % (group, k))
             else:
-                # Add group hosts into the linked groups
                 if ':groups' in gv:
+                    # Add group hosts into the linked groups
                     for g in gv[':groups']:
                         for h in inv[group]['hosts']:
                             if h not in inv[g]['hosts']:
                                 inv[g]['hosts'].append(h)
+                elif ':templates' in gv and isinstance(gv[':templates'], list):
+                    # Add templates as group children
+                    if 'children' not in inv[group]:
+                        inv[group]['children'] = []
+
+                    for t in gv[':templates']:
+                        if symlinks:
+                            inv[group]['children'].append(
+                                "%s@%s.vault" % (group, t))
+                        else:
+                            inv[group]['children'].append("%s@%s" % (group, t))
 
             # Walk the subgroup
             walk_yaml(inv, gv, vars_path, symlinks, gpath, level+1)
