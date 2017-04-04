@@ -81,6 +81,10 @@ def read_vars_file(inv, group, vars_path, symlinks, vars_always=False):
     if '@' in group:
         _, g = group.split('@')
 
+    # Do not try to load vault files
+    if g.endswith('.vault'):
+        return
+
     path = "%s/%s" % (vars_path, g.replace('-', '/'))
     data = None
 

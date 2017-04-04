@@ -366,7 +366,7 @@ environment variables:
       ~/.ansible/yaml_inventory.conf
       /etc/ansible/yaml_inventory.conf)
   YAML_INVENTORY_PATH
-    location of the inventory directory (./ by default)
+    location of the inventory directory (./inventory by default)
   YAML_INVENTORY_VARS_PATH
     location of the inventory vars directory (YAML_INVENTORY_PATH/vars by default)
   YAML_INVENTORY_GROUP_VARS_PATH
