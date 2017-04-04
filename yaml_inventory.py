@@ -100,7 +100,6 @@ def read_vars_file(inv, group, vars_path, symlinks, vars_always=False):
             log.error("E: Cannot load YAML inventory vars file.\n%s" % e)
             sys.exit(1)
 
-
     # Create empty group if needed
     if group not in inv:
         inv[group] = {
@@ -122,107 +121,102 @@ def read_vars_file(inv, group, vars_path, symlinks, vars_always=False):
         inv[group]['vars'].update(data)
 
 
-def walk_yaml(inv, data, vars_path, symlinks, path=[], level=0):
+def add_param(inv, path, param, val, vars_path, symlinks):
+    if param.startswith(':'):
+        param = param[1:]
+
+    _path = list(path)
+
+    if symlinks:
+        # Create link g1.vault -> g1
+        _path[-1] += '.vault'
+        add_param(inv, _path, 'children', ['-'.join(path)], vars_path, False)
+
+        if isinstance(val, list) and len(val) and param == 'children':
+            val[0] += '.vault'
+
+    group = '-'.join(path)
+
+    # Add empty group
+    if group not in inv:
+        inv[group] = {}
+
+    # Add empty parameter
+    if param not in inv[group]:
+        if param == 'vars':
+            inv[group][param] = {}
+        else:
+            inv[group][param] = []
+
+    # Add parameter value
+    if isinstance(inv[group][param], dict) and isinstance(val, dict):
+        inv[group][param].update(val)
+    elif isinstance(inv[group][param], list) and isinstance(val, list):
+        # Add individual items if they don't exist
+        for v in val:
+            if v not in inv[group][param]:
+                inv[group][param] += val
+
+    # Read inventory vars file
+    if not symlinks:
+        read_vars_file(inv, group, vars_path, symlinks)
+
+
+def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
     if data is None:
         return
 
-    # Create vars for the "all" group if defined
-    if level == 0 and ':vars' in data:
-        read_vars_file(inv, 'all', vars_path, symlinks, True)
-        inv['all']['vars'].update(data[':vars'])
+    params = list(k for k in data.keys() if k[0] == ':')
+    groups = list(k for k in data.keys() if k[0] != ':')
 
-    for gk, gv in dict((k, v) for k, v in data.items() if k[0] != ':').items():
-        gpath = path + [gk]
-        group = '-'.join(gpath)
+    for p in params:
+        _path = list(path)
 
-        # Create vault group and make the real group as its child
-        if len(path) and symlinks:
-            inv["%s.vault" % group] = {
-                'children': [
-                    group
-                ],
-                'hosts': []
-            }
+        if p == ':templates':
+            for t in data[p]:
+                _pth = list(_path)
+                _pth[-1] += "@%s" % t
 
-        # Initiate the group
-        read_vars_file(inv, group, vars_path, symlinks)
-        inv[group]['hosts'] = []
+                add_param(
+                    inv, _pth, 'children', ['-'.join(_path)], vars_path,
+                    symlinks)
+        elif p in [':vars', ':hosts']:
+            if parent is None:
+                _path = ['all']
 
-        # Walk through internal keys if any
-        if gv is not None:
-            for k, v in gv.items():
-                if k[0] == ':':
-                    # Non-group
-                    if k == ':groups' and isinstance(v, list):
-                        for g in v:
-                            if g not in inv:
-                                read_vars_file(inv, g, vars_path, symlinks)
-                                inv[g]['hosts'] = []
-                    elif k == ':hosts':
-                        for h in v:
-                            # Distinguish between list and str
-                            if isinstance(h, dict):
-                                inv[group]['hosts'].append(list(h.keys())[0])
-                                # Host with vars needs hostvars record
-                                inv['_meta']['hostvars'].update(h)
-                            else:
-                                inv[group]['hosts'].append(h)
-                    elif k == ':templates' and isinstance(v, list):
-                        for t in v:
-                            tg = "%s@%s" % (group, t)
-                            tgv = "%s.vault" % tg
+            if p == ':hosts':
+                for h in data[p]:
+                    # Add host with vars into the _meta hostvars
+                    if isinstance(h, dict):
+                        if list(h.keys())[0] not in inv['_meta']['hostvars']:
+                            inv['_meta']['hostvars'].update(h)
 
-                            # Add templates as children
-                            if tgv not in inv:
-                                read_vars_file(inv, tg, vars_path, symlinks)
-
-                                if symlinks:
-                                    inv[tg]['children'] = ["%s.vault" % group]
-                                    inv[tgv] = {
-                                        'children': [tg],
-                                        'hosts': []
-                                    }
-                                else:
-                                    inv[tg]['children'] = [group]
-                    elif k == ':vars':
-                        read_vars_file(inv, group, vars_path, symlinks)
-                        inv[group]['vars'] = v
-                else:
-                    # Another subgroup
-                    if 'children' not in inv[group]:
-                        inv[group]['children'] = []
-
-                    read_vars_file(inv, group, vars_path, symlinks)
-
-                    # Create extra template groups
-                    if (
-                            v is not None and
-                            ':templates' in v and
-                            isinstance(v[':templates'], list)):
-                        for t in v[':templates']:
-                            if symlinks:
-                                inv[group]['children'].append(
-                                    '%s-%s@%s.vault' % (group, k, t))
-                            else:
-                                inv[group]['children'].append(
-                                    '%s-%s@%s' % (group, k, t))
+                        add_param(
+                            inv, _path, p, list(h.keys())[0], vars_path,
+                            symlinks)
                     else:
-                        if symlinks:
-                            inv[group]['children'].append(
-                                '%s-%s.vault' % (group, k))
-                        else:
-                            inv[group]['children'].append(
-                                '%s-%s' % (group, k))
+                        add_param(inv, _path, p, [h], vars_path, symlinks)
+            if p == ':groups':
+                # TODO: Add this functionality
+                pass
+            if p == ':add_hosts':
+                # TODO: Add this functionality
+                pass
             else:
-                if ':groups' in gv:
-                    # Add group hosts into the linked groups
-                    for g in gv[':groups']:
-                        for h in inv[group]['hosts']:
-                            if h not in inv[g]['hosts']:
-                                inv[g]['hosts'].append(h)
+                add_param(inv, _path, p, data[p], vars_path, symlinks)
 
-            # Walk the subgroup
-            walk_yaml(inv, gv, vars_path, symlinks, gpath, level+1)
+    for g in groups:
+        if parent is not None:
+            if data[g] is not None and ':templates' in data[g]:
+                for t in data[g][':templates']:
+                    _path = list(path + [g])
+                    _path[-1] += "@%s" % t
+
+                    add_param(
+                        inv, path, 'children', ['-'.join(_path)], vars_path,
+                        symlinks)
+
+        walk_yaml(inv, data[g], vars_path, symlinks, g, path + [g])
 
 
 def read_yaml_file(f_path, strip_hyphens=True):
@@ -339,8 +333,11 @@ def get_vars(config):
             log.error("E: Wrong value of the create_symlinks option.\n%s" % e)
 
     # Check if there is the env var specifying the create_symlinks flag
-    if 'YAML_INVENTORY_CREATE_SYMLINKS' in os.environ:
-        symlinks = os.environ['YAML_INVENTORY_CREATE_SYMLINKS']
+    if (
+            'YAML_INVENTORY_CREATE_SYMLINKS' in os.environ and
+            os.environ['YAML_INVENTORY_CREATE_SYMLINKS'].lower() not in [
+                '1', 'yes', 'y', 'true']):
+        symlinks = False
 
     return inventory_path, vars_path, group_vars_path, symlinks
 
@@ -384,7 +381,7 @@ def parse_arguments():
       '      ~/.ansible/yaml_inventory.conf\n'
       '      /etc/ansible/yaml_inventory.conf)\n'
       '  YAML_INVENTORY_PATH\n'
-      '    location of the inventory directory (./ by default)\n'
+      '    location of the inventory directory (./inventory by default)\n'
       '  YAML_INVENTORY_VARS_PATH\n'
       '    location of the inventory vars directory (YAML_INVENTORY_PATH/vars '
       'by default)\n'
