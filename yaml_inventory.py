@@ -220,6 +220,8 @@ def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
                         inv, path, 'children', ['-'.join(_path)], vars_path,
                         symlinks)
 
+            add_param(inv, path, 'children', ['-'.join(path + [g])], vars_path, symlinks)
+
         walk_yaml(inv, data[g], vars_path, symlinks, g, path + [g])
 
 
