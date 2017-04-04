@@ -196,14 +196,14 @@ def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
                             inv['_meta']['hostvars'].update(h)
 
                         add_param(
-                            inv, _path, p, list(h.keys())[0], vars_path,
+                            inv, _path, p, [list(h.keys())[0]], vars_path,
                             symlinks)
                     else:
                         add_param(inv, _path, p, [h], vars_path, symlinks)
-            if p == ':groups':
+            elif p == ':groups':
                 # TODO: Add this functionality
                 pass
-            if p == ':add_hosts':
+            elif p == ':add_hosts':
                 # TODO: Add this functionality
                 pass
             else:
