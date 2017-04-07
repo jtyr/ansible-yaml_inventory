@@ -15,19 +15,10 @@ which are also affected by the complexity of the group names.
 
 This Ansible dynamic inventory script is trying to address these issues
 by reading the inventory from YAML file. The YAML hierarchical format
-significantly simplifies the way how the groups are named and how the
-relationship between the groups are created. It also allows to insert
-hosts into multiple groups (e.g. groups with common configuration)
-without the need to define the hosts again which reduces the data
-redundancy in the inventory file.
+significantly simplifies the way how the groups are named and how
+relationships between the groups are created.
 
-The script also simplifies the use of Vault files by automatically
-creating relationship between the group (e.g. `mygroup`) and the secured
-content of that group (`mygroup.vault`). This convention makes sure that
-the Vault `group_vars` file is always loaded if it exists.
-
-For comparison, here is the standard inventory file allowing the
-features mentioned above:
+For comparison, here is the standard Ansible inventory file:
 
 ```
 [aws:children]
@@ -37,25 +28,22 @@ aws-stg
 aws-prd
 
 [aws-dev]
-aws-dev-host01          ansible_host=192.168.1.15
+aws-dev-host01        ansible_host=192.168.1.15
 
 [aws-dev:children]
-aws-dev-jenkins.vault
-
-[aws-dev-jenkins.vault:children]
 aws-dev-jenkins
 
 [aws-dev-jenkins]
-aws-dev-jenkins01       ansible_host=192.168.1.16
+aws-dev-jenkins01     ansible_host=192.168.1.16
 
 [aws-qa]
-aws-qa-host01           ansible_host=192.168.2.15
+aws-qa-host01         ansible_host=192.168.2.15
 
 [aws-stg]
-aws-stg-host01          ansible_host=192.168.3.15
+aws-stg-host01        ansible_host=192.168.3.15
 
 [aws-prd]
-aws-prd-host01          ansible_host=192.168.4.15
+aws-prd-host01        ansible_host=192.168.4.15
 
 
 [azure:children]
@@ -65,33 +53,25 @@ azure-stg
 azure-prd
 
 [azure-dev]
-azure-dev-host01        ansible_host=10.0.1.15
+azure-dev-host01      ansible_host=10.0.1.15
 
 [azure-dev:children]
-azure-dev-jenkins.vault
-
-[azure-dev-jenkins.vault:children]
 azure-dev-jenkins
 
 [azure-dev-jenkins]
-azure-dev-jenkins01     ansible_host=10.0.1.16
+azure-dev-jenkins01   ansible_host=10.0.1.16
 
 [azure-qa]
-azure-qa-host01         ansible_host=10.0.2.15
+azure-qa-host01       ansible_host=10.0.2.15
 
 [azure-stg]
-azure-stg-host01        ansible_host=10.0.3.15
+azure-stg-host01      ansible_host=10.0.3.15
 
 [azure-prd]
-azure-prd-host01        ansible_host=10.0.4.15
-
-
-[template-dmz]
-aws-dev-jenkins01       ansible_host=192.168.1.16
-azure-dev-jenkins01     ansible_host=10.0.1.16
+azure-prd-host01      ansible_host=10.0.4.15
 ```
 
-And here is how the same looks in YAML:
+And here is the same but in the YAML format:
 
 ```
 ---
@@ -103,8 +83,6 @@ aws:
     jenkins:
       :hosts:
         - aws-dev-jenkins01:   { ansible_host: 192.168.1.16 }
-      :groups:
-        - template_dmz
   qa:
     :hosts:
       - aws-qa-host01:         { ansible_host: 192.168.2.15 }
@@ -122,8 +100,6 @@ azure:
     jenkins:
       :hosts:
         - azure-dev-jenkins01: { ansible_host: 10.0.1.16 }
-      :groups:
-        - template_dmz
   qa:
     :hosts:
       - azure-qa-host01:       { ansible_host: 10.0.2.15 }
@@ -135,6 +111,15 @@ azure:
       - azure-prd-host01:      { ansible_host: 10.0.4.15 }
 ```
 
+The script adds several more features which simplify the work with the
+inventory:
+
+- Automatic `.vault` files loading.
+- Adding hosts to/from other groups.
+- Using vars files as a common template.
+
+See more details in the examples bellow.
+
 
 Usage
 -----
@@ -143,8 +128,8 @@ Usage
 
 The main YAML inventory should be stored in the `main.yaml` file located
 by default in the `inventory` directory. The location can be changed in
-the config file (`inventory_path`) or via environment variable
-(`YAML_INVENTORY_PATH`).
+the config file (`inventory_path` - see the `yaml_inventory.conf` file)
+or via environment variable (`YAML_INVENTORY_PATH`).
 
 This is an example of a monolithic inventory YAML file:
 
@@ -157,25 +142,15 @@ aws:
       elasticsearch:
         # Hosts of the aws-dev-elk-elasticsearch group
         :hosts:
+          # Hosts with variables
           - elk01: { ansible_host: 192.168.1.11 }
           - elk02: { ansible_host: 192.168.1.12 }
           - elk03: { ansible_host: 192.168.1.13 }
-        # Vars for the aws-dev-elk-elasticsearch group
-        :vars:
-          ansible_user: ansible
       kibana:
+        # Hosts of the aws-dev-elk-kibana group
         :hosts:
-          - elk04:
-              ansible_host: 192.168.1.14
-    pulp:
-      :hosts:
-        - pulp01
-      :groups:
-        # List of additional groups where the hosts will be added
-        - template-pulp
-  qa:
-  stg:
-  prd:
+          # Host with no variables
+          - elk04
 ```
 
 The same like above but with YAML reference:
@@ -187,33 +162,19 @@ The same like above but with YAML reference:
 aws-dev: &aws-dev
   elk:
     elasticsearch:
-      # Hosts of the aws-dev-elk-elasticsearch group
       :hosts:
         - elk01: { ansible_host: 192.168.1.11 }
         - elk02: { ansible_host: 192.168.1.12 }
         - elk03: { ansible_host: 192.168.1.13 }
-      # Vars for the aws-dev-elk-elasticsearch group
-      :vars:
-        ansible_user: ansible
     kibana:
       :hosts:
-        - elk04:
-            ansible_host: 192.168.1.14
-  pulp:
-    :hosts:
-      - pulp01
-    :groups:
-      # List of additional groups where the hosts will be added
-      - template-pulp
+        - elk04
 
 # This is the main data structure
 aws:
   dev:
     # Reference to the above data structure
     <<: *aws-dev
-  qa:
-  stg:
-  prd:
 ```
 
 This is the same like above but with the referenced content in a separate
@@ -228,24 +189,13 @@ Content of the `aws-dev.yaml` file:
 aws-dev: &aws-dev
   elk:
     elasticsearch:
-      # Hosts of the aws-dev-elk-elasticsearch group
       :hosts:
         - elk01: { ansible_host: 192.168.1.11 }
         - elk02: { ansible_host: 192.168.1.12 }
         - elk03: { ansible_host: 192.168.1.13 }
-      # Vars for the aws-dev-elk-elasticsearch group
-      :vars:
-        ansible_user: ansible
     kibana:
       :hosts:
-        - elk04:
-            ansible_host: 192.168.1.14
-  pulp:
-    :hosts:
-      - pulp01
-    :groups:
-      # List of additional groups where the hosts will be added
-      - template-pulp
+        - elk04
 ```
 
 Content of the `main.yaml` file:
@@ -258,15 +208,51 @@ aws:
   dev:
     # Refference the above data structure
     <<: *aws-dev
-  qa:
-  stg:
-  prd:
 ```
 
 The inventory script reads all YAML files from the `inventory` directory
 and merges them all together. The `main.yaml` portion is always inserted
 at the end so that the YAML references can still be resolved. Group names
 are composed from elements of the tree separated by `-` sign.
+
+As visible above, the YAML structure contains special keyword `:hosts`.
+That keyword indicates that content of that section is a list of hosts.
+Other keywords are `:vars`, `:template`, `:groups` and `:add_hosts`.
+The following is an example of usage of all the keywords:
+
+```
+---
+
+g1:
+  :hosts:
+    - ahost1
+    - ahost2
+  :vars:
+    # Variable for the group g1
+    my_var: 123
+g2:
+  :hosts:
+    - bhost1
+    - bhost2
+  :groups:
+    # Add all hosts from group g2 into the group g1
+    - g1
+g3:
+  :hosts:
+    - chost1
+    - chost2
+  :templates:
+    # This creates g3@template-g3 group which has the g3 group as its
+    # child. That will allow to load the inventory vars from the file in
+    # inventory/vars/template/g3. As the g3 group is a child of the
+    # template group, variables from the g3 inventory vars file can
+    # still override the vars in the template file.
+    - template-g3
+g4:
+  :add_hosts:
+    # Regular expression to import hosts ahost2 and bhost2 to this group
+    - ^[ab]host2
+```
 
 
 ### Inventory vars
@@ -306,7 +292,8 @@ aws:
         - aws-dev-jenkins01
 ```
 
-then this is the corresponding file structure of the inventory vars:
+then the corresponding file structure of the inventory vars can look like
+this:
 
 ```
 $ tree -p inventory
@@ -317,12 +304,12 @@ inventory
         └── [-rw-r--r--]  jenkins
 ```
 
-The inventory vars are symlinked into the `group_vars` directory during
-the execution of the inventory script. The `group_vars` file names are
-based on the structure of the invetory vars directory. From the example
-above, the path `invenotory/aws/all` is symlinked like `group_vars/aws`
-and the path `invenotory/aws/dev/jenkins` is simliked like
-`group_vars/aws-dev-jenkins`.
+If enabled, the inventory vars are symlinked into the `group_vars`
+directory during the execution of the inventory script. The `group_vars`
+file names are based on the structure of the invetory vars directory.
+From the example above, the path `invenotory/aws/all` is symlinked like
+`group_vars/aws` and the path `invenotory/aws/dev/jenkins` is symlinked
+like `group_vars/aws-dev-jenkins`.
 
 ```
 $ ls -la ./group_vars
@@ -332,6 +319,11 @@ drwxr-xr-x 9 jtyr users 4096 Mar 27 10:10 ..
 lrwxrwxrwx 1 jtyr users   21 Mar 28 17:20 aws -> ../inventory/vars/aws/all
 lrwxrwxrwx 1 jtyr users   29 Mar 28 17:20 aws-dev-jenkins -> ../inventory/vars/aws/dev/jenkins
 ```
+
+The script also simplifies the use of Vault files by automatically
+creating relationship between the group (e.g. `mygroup`) and the secured
+content of that group (`mygroup.vault`). This convention makes sure that
+the Vault file is always loaded if it exists.
 
 
 ### Inventory script
@@ -361,7 +353,7 @@ optional arguments:
 
 environment variables:
   YAML_INVENTORY_CONFIG_PATH
-    location of the config file (possible locations:
+    location of the config file (default locations:
       ./yaml_inventory.conf
       ~/.ansible/yaml_inventory.conf
       /etc/ansible/yaml_inventory.conf)
@@ -380,7 +372,6 @@ TODO
 ----
 
 - Implement hosts enumeration.
-- Implement adding hosts from an other group via regexp.
 
 
 License

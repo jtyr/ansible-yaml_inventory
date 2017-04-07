@@ -10,6 +10,7 @@ import glob
 import json
 import logging
 import os
+import re
 import sys
 import yaml
 
@@ -28,6 +29,16 @@ def create_symlinks(vars_path, group_vars_path, inv):
             if src_list[0].startswith('.'):
                 continue
 
+            # Strip out the YAML file extension
+            if src_list[-1].endswith('.yaml'):
+                src_list[-1] = src_list[-1][:-5]
+            elif src_list[-1].endswith('.yml'):
+                src_list[-1] = src_list[-1][:-4]
+            elif src_list[-1].endswith('.yaml.vault'):
+                src_list[-1] = "%s.vault" % src_list[-1][:-11]
+            elif src_list[-1].endswith('.yml.vault'):
+                src_list[-1] = "%s.vault" % src_list[-1][:-10]
+
             # Keep only the top-level "all" file
             if src_list[-1] in ['all', 'all.vault'] and len(src_list) > 1:
                 # Keep the .vault extension
@@ -40,7 +51,7 @@ def create_symlinks(vars_path, group_vars_path, inv):
             dst = []
 
             # Ignore files which are not groups
-            if src_list[0] == 'all' or src_list_s in inv.keys():
+            if src_list[0] in ['all', 'all.vault'] or src_list_s in inv.keys():
                 dst.append("%s/%s" % (group_vars_path, src_list_s))
 
             # Add templates into the dst list
@@ -174,9 +185,12 @@ def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
     groups = list(k for k in data.keys() if k[0] != ':')
 
     for p in params:
-        _path = list(path)
+        if parent is None:
+            _path = ['all']
+        else:
+            _path = list(path)
 
-        if p == ':templates':
+        if p == ':templates' and parent is not None:
             for t in data[p]:
                 _pth = list(_path)
                 _pth[-1] += "@%s" % t
@@ -184,30 +198,50 @@ def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
                 add_param(
                     inv, _pth, 'children', ['-'.join(_path)], vars_path,
                     symlinks)
-        elif p in [':vars', ':hosts']:
-            if parent is None:
-                _path = ['all']
 
-            if p == ':hosts':
-                for h in data[p]:
-                    # Add host with vars into the _meta hostvars
+        elif p == ':hosts':
+            for h in data[p]:
+                # Add host with vars into the _meta hostvars
+                if isinstance(h, dict):
+                    if list(h.keys())[0] not in inv['_meta']['hostvars']:
+                        inv['_meta']['hostvars'].update(h)
+
+                    add_param(
+                        inv, _path, p, [list(h.keys())[0]], vars_path,
+                        symlinks)
+                else:
+                    add_param(inv, _path, p, [h], vars_path, symlinks)
+
+        elif p == ':vars':
+            add_param(inv, _path, p, data[p], vars_path, symlinks)
+
+        elif p == ':groups' and ':hosts' in data:
+            for g in data[p]:
+                g_path = g.split('-')
+
+                # Add hosts in the same way like above
+                for h in data[':hosts']:
                     if isinstance(h, dict):
-                        if list(h.keys())[0] not in inv['_meta']['hostvars']:
-                            inv['_meta']['hostvars'].update(h)
-
                         add_param(
-                            inv, _path, p, [list(h.keys())[0]], vars_path,
-                            symlinks)
+                            inv, g_path, 'hosts', [list(h.keys())[0]],
+                            vars_path, symlinks)
                     else:
-                        add_param(inv, _path, p, [h], vars_path, symlinks)
-            elif p == ':groups':
-                # TODO: Add this functionality
-                pass
-            elif p == ':add_hosts':
-                # TODO: Add this functionality
-                pass
-            else:
-                add_param(inv, _path, p, data[p], vars_path, symlinks)
+                        add_param(
+                            inv, g_path, 'hosts', [h], vars_path, symlinks)
+
+        elif p == ':add_hosts':
+            key = '__YAML_INVENTORY'
+
+            if key not in inv:
+                inv[key] = []
+
+            record = {
+                'path': path,
+                'patterns': data[p]
+            }
+
+            # Make a list of groups which want to add hosts by regexps
+            inv[key].append(record)
 
     for g in groups:
         if parent is not None:
@@ -220,7 +254,9 @@ def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
                         inv, path, 'children', ['-'.join(_path)], vars_path,
                         symlinks)
 
-            add_param(inv, path, 'children', ['-'.join(path + [g])], vars_path, symlinks)
+            add_param(
+                inv, path, 'children', ['-'.join(path + [g])], vars_path,
+                symlinks)
 
         walk_yaml(inv, data[g], vars_path, symlinks, g, path + [g])
 
@@ -382,7 +418,7 @@ def parse_arguments():
     epilog = (
       'environment variables:\n'
       '  YAML_INVENTORY_CONFIG_PATH\n'
-      '    location of the config file (possible locations:\n'
+      '    location of the config file (default locations:\n'
       '      ./yaml_inventory.conf\n'
       '      ~/.ansible/yaml_inventory.conf\n'
       '      /etc/ansible/yaml_inventory.conf)\n'
@@ -446,6 +482,27 @@ def main():
                 k[0] != ':vars')),
             vars_path,
             symlinks)
+
+    # Add hosts by regexp
+    if '__YAML_INVENTORY' in dyn_inv:
+        tmp_inv = dict(dyn_inv)
+
+        for inv_group, inv_group_content in tmp_inv.items():
+            if (
+                    not inv_group.endswith('.vault') and
+                    '@' not in inv_group and
+                    'hosts' in inv_group_content):
+                for re_data in tmp_inv['__YAML_INVENTORY']:
+                    for pattern in re_data['patterns']:
+                        for host in inv_group_content['hosts']:
+                            if re.match(pattern, host):
+                                add_param(
+                                    dyn_inv, re_data['path'], 'hosts', [host],
+                                    vars_path, symlinks)
+
+        # Clear the regexp data
+        tmp_inv = None
+        dyn_inv.pop('__YAML_INVENTORY', None)
 
     # Create group_vars symlinks if enabled
     if symlinks:
