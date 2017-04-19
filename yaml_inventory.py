@@ -449,6 +449,9 @@ def parse_arguments():
 
 
 def main():
+    # Configure the logger (required for Python v2.6)
+    logging.basicConfig()
+
     # Parse command line arguments
     (args, parser) = parse_arguments()
 
