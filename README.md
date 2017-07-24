@@ -1,24 +1,45 @@
 yaml_inventory
 ==============
 
-Ansible dynamic inventory reading the inventory from YAML file.
+Ansible dynamic inventory script which reads the inventory from a specially
+formatted YAML file.
 
 
 Description
 -----------
 
-Standard Ansible inventory file has a flat structure where all groups are
-on the same level and relate to each other via `:children` definition.
-This leads to long group names when trying to capture more complex
-relationships. Inventory groups also correspond to `group_vars` files
-which are also affected by the complexity of the group names.
+Standard Ansible inventory suffers of several issues:
+
+- It must be a single file.
+- It has a flat structure where all groups are on the same level and relate to
+  each other via `:children` definition leading to long group names when trying
+  to capture more complex relationships. That also affects the names of the
+  `group_vars`.
+- When using Vault file, it requires the files the be either named like the
+  group or to be placed inside a directory of the group name or to be
+  explicitely included in the play.
+- Hosts that belong to multiple groups must be defined in multiple places.
+- Sharing the same `group_vars` across multiple groups is a challenging problem.
 
 This Ansible dynamic inventory script is trying to address these issues
-by reading the inventory from YAML file. The YAML hierarchical format
-significantly simplifies the way how the groups are named and how
-relationships between the groups are created.
+by allowing the following features:
 
-For comparison, here is the standard Ansible inventory file:
+- Possibility to split the inventory into multiple files.
+- Self-generating group names based on the YAML structure.
+- Automatic `.vault` files loading.
+- Possibility to add hosts to an other group.
+- Possibility to include hosts from an other groups via regexp.
+- Using vars files as a common template.
+
+See the usage bellow for more details.
+
+
+Usage
+-----
+
+### Inventory YAML file
+
+Here is an example of the standard Ansible inventory file:
 
 ```
 [aws:children]
@@ -110,21 +131,6 @@ azure:
     :hosts:
       - azure-prd-host01:      { ansible_host: 10.0.4.15 }
 ```
-
-The script adds several more features which simplify the work with the
-inventory:
-
-- Automatic `.vault` files loading.
-- Adding hosts to/from other groups.
-- Using vars files as a common template.
-
-See more details in the examples bellow.
-
-
-Usage
------
-
-### Inventory YAML file
 
 The main YAML inventory should be stored in the `main.yaml` file located
 by default in the `inventory` directory. The location can be changed in
