@@ -26,6 +26,7 @@ by allowing the following features:
 
 - Possibility to split the inventory into multiple files.
 - Self-generating group names based on the YAML structure.
+- Truly hiearchical vars files.
 - Automatic `.vault` files loading.
 - Possibility to add hosts to an other group.
 - Possibility to include hosts from an other groups via regexp.
@@ -287,6 +288,7 @@ coexist file and directory of the same name.
 If this is the inventory file:
 
 ```
+$ cat inventory/main.yaml
 ---
 
 # This is a group containing another group (vars in `all` file)
@@ -302,8 +304,8 @@ then the corresponding file structure of the inventory vars can look like
 this:
 
 ```
-$ tree -p inventory
-inventory
+$ tree -p inventory/vars
+inventory/vars
 └── [drwxr-xr-x]  aws
     ├── [-rw-r--r--]  all
     └── [drwxr-xr-x]  dev
@@ -336,7 +338,7 @@ the Vault file is always loaded if it exists.
 
 The inventory script can be used as any other Ansible dynamic inventory.
 With the default settings (the `main.yaml` inventory file in the
-`./inventory` directory and the inventory files in the `./inventory/vars`
+`./inventory` directory and the inventory vars in the `./inventory/vars`
 directory) the command can be as follows:
 
 ```
