@@ -145,7 +145,7 @@ def add_param(inv, path, param, val, vars_path, symlinks):
     if symlinks:
         # Create link g1.vault -> g1
         _path[-1] += '.vault'
-        add_param(inv, _path, 'children', ['-'.join(path)], vars_path, False)
+        add_param(inv, _path, 'children', ['-'.join(path)], vars_path, None)
 
         if isinstance(val, list) and len(val) and param == 'children':
             val[0] += '.vault'
@@ -173,7 +173,7 @@ def add_param(inv, path, param, val, vars_path, symlinks):
                 inv[group][param] += val
 
     # Read inventory vars file
-    if not symlinks:
+    if not symlinks and symlinks is not None:
         read_vars_file(inv, group, vars_path, symlinks)
 
 
@@ -430,7 +430,7 @@ def parse_arguments():
       '  YAML_INVENTORY_GROUP_VARS_PATH\n'
       '    location of the vars directory (./group_vars by default)\n'
       '  YAML_INVENTORY_CREATE_SYMLINKS\n'
-      '    flag to create group_vars symlinks (enabled by default)')
+      '    flag to create group_vars symlinks (yes by default)')
 
     parser = argparse.ArgumentParser(
         description=description,

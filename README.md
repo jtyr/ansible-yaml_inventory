@@ -10,7 +10,7 @@ Description
 
 Standard Ansible inventory suffers of several issues:
 
-- It must be a single file.
+- It must be a single file or multiple files in a directory.
 - It has a flat structure where all groups are on the same level and relate to
   each other via `:children` definition leading to long group names when trying
   to capture more complex relationships. That also affects the names of the
@@ -24,9 +24,9 @@ Standard Ansible inventory suffers of several issues:
 This Ansible dynamic inventory script is trying to address these issues
 by allowing the following features:
 
-- Possibility to split the inventory into multiple files.
+- Possibility to split single inventory into multiple files.
 - Self-generating group names based on the YAML structure.
-- Truly hiearchical vars files.
+- Truly hierarchical vars files.
 - Automatic `.vault` files loading.
 - Possibility to add hosts to an other group.
 - Possibility to include hosts from an other groups via regexp.
@@ -257,7 +257,7 @@ g3:
     - template-g3
 g4:
   :add_hosts:
-    # Regular expression to import hosts ahost2 and bhost2 to this group
+    # Regular expression to add hosts ahost2 and bhost2 into this group
     - ^[ab]host2
 ```
 
@@ -314,7 +314,7 @@ inventory/vars
 
 If enabled, the inventory vars are symlinked into the `group_vars`
 directory during the execution of the inventory script. The `group_vars`
-file names are based on the structure of the invetory vars directory.
+file names are based on the structure of the inventory vars directory.
 From the example above, the path `invenotory/aws/all` is symlinked like
 `group_vars/aws` and the path `invenotory/aws/dev/jenkins` is symlinked
 like `group_vars/aws-dev-jenkins`.
@@ -376,10 +376,20 @@ environment variables:
 ```
 
 
+Issues
+------
+
+- No Vault support for `all` group due to the circular relationship between
+  the `all.vault` and the `all` group.
+- No support for encrypted variables available in Ansible v2.3+.
+
+
 TODO
 ----
 
 - Implement hosts enumeration.
+- Refactor it into an inventory plugin to facilitate support for encrypted
+  variables.
 
 
 License
