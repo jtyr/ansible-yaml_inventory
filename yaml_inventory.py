@@ -203,11 +203,18 @@ def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
             for h in data[p]:
                 # Add host with vars into the _meta hostvars
                 if isinstance(h, dict):
-                    if list(h.keys())[0] not in inv['_meta']['hostvars']:
-                        inv['_meta']['hostvars'].update(h)
+                    host_name = list(h.keys())[0]
+                    host_vars = list(h.values())[0]
 
+                    # Add host vars
+                    if host_name not in inv['_meta']['hostvars']:
+                        inv['_meta']['hostvars'].update(h)
+                    else:
+                        inv['_meta']['hostvars'][host_name].update(host_vars)
+
+                    # Add host
                     add_param(
-                        inv, _path, p, [list(h.keys())[0]], vars_path,
+                        inv, _path, p, [host_name], vars_path,
                         symlinks)
                 else:
                     add_param(inv, _path, p, [h], vars_path, symlinks)
