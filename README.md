@@ -35,6 +35,16 @@ by allowing the following features:
 See the usage bellow for more details.
 
 
+Installation
+------------
+
+```
+$ git clone https://github.com/jtyr/ansible-yaml_inventory yaml_inventory
+$ ln -s yaml_inventory/yaml_inventory.py hosts
+$ ansible-playbook -i hosts site.yaml
+```
+
+
 Usage
 -----
 
@@ -375,10 +385,46 @@ environment variables:
     flag to create group_vars symlinks (enabled by default)
 ```
 
+### Combining it with other inventory scripts
+
+Put the YAML dynamic inventory script together with the other (e.g.
+[AWS EC2](http://docs.ansible.com/ansible/latest/intro_dynamic_inventory.html#example-aws-ec2-external-inventory-script))
+dynamic inventory script into the `inventory_scripts` directory and name them
+to be in alphabetical order that the YAML inventory is first and the other
+inventory is second:
+
+```
+$ ls inventory_scripts
+01_yaml_inventory
+02_aws_inventory
+```
+
+Use the YAML inventory to create the desired inventory structure and the
+other inventory to fill in the hosts into the groups:
+
+```
+$ cat inventory/main.yaml
+---
+aws:
+  dev:
+    jenkins:
+      :hosts: []
+```
+
+Then run Ansible like this:
+
+```
+$ ansible-playbook -i inventory_scripts site.yaml
+```
+
 
 Issues
 ------
 
+- When using `create_symlinks = yes` and the inventory structure has changed,
+  the YAML inventory must be run manually before the Ansible runs because the
+  `group_vars` symlinks get created after the `group_vars` files are normally
+  read by Ansible.
 - No Vault support for `all` group due to the circular relationship between
   the `all.vault` and the `all` group.
 - No support for encrypted variables available in Ansible v2.3+.

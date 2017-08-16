@@ -218,6 +218,9 @@ def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
                         symlinks)
                 else:
                     add_param(inv, _path, p, [h], vars_path, symlinks)
+            else:
+                # Create empty hosts list if :hosts exists but it's empty
+                add_param(inv, _path, p, [], vars_path, symlinks)
 
         elif p == ':vars':
             add_param(inv, _path, p, data[p], vars_path, symlinks)
