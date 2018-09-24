@@ -329,7 +329,9 @@ def read_inventory(inventory_path):
     # Convert YAML string to data structure
     try:
         data = yaml.load(yaml_content + yaml_main)
-        data_main = yaml.load(yaml_main.replace(' *', ''))
+        # Remove all YAML references
+        yaml_main = re.sub(r':\s+\*', ': ', yaml_main).replace('<<:', 'k:')
+        data_main = yaml.load(yaml_main)
     except yaml.YAMLError as e:
         log.error("E: Cannot load YAML inventory.\n%s" % e)
         sys.exit(1)
@@ -340,7 +342,7 @@ def read_inventory(inventory_path):
             if key not in data_main:
                 data.pop(key, None)
 
-    return data, data_main
+    return data
 
 
 def get_vars(config):
@@ -477,7 +479,7 @@ def main():
     (inventory_path, vars_path, group_vars_path, symlinks) = get_vars(config)
 
     # Read the inventory
-    (data, data_main) = read_inventory(inventory_path)
+    data = read_inventory(inventory_path)
 
     # Initiate the dynamic inventory
     dyn_inv = {
