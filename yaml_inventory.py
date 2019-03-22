@@ -110,7 +110,7 @@ def read_vars_file(inv, group, vars_path, symlinks, vars_always=False):
     # Read the group file or the "all" file from the group dir if exists
     if path is not None:
         try:
-            data = yaml.load(read_yaml_file(path, False))
+            data = yaml.safe_load(read_yaml_file(path, False))
         except yaml.YAMLError as e:
             log.error("E: Cannot load YAML inventory vars file.\n%s" % e)
             sys.exit(1)
@@ -328,10 +328,10 @@ def read_inventory(inventory_path):
 
     # Convert YAML string to data structure
     try:
-        data = yaml.load(yaml_content + yaml_main)
+        data = yaml.safe_load(yaml_content + yaml_main)
         # Remove all YAML references
         yaml_main = re.sub(r':\s+\*', ': ', yaml_main).replace('<<:', 'k:')
-        data_main = yaml.load(yaml_main)
+        data_main = yaml.safe_load(yaml_main)
     except yaml.YAMLError as e:
         log.error("E: Cannot load YAML inventory.\n%s" % e)
         sys.exit(1)
@@ -343,6 +343,14 @@ def read_inventory(inventory_path):
                 data.pop(key, None)
 
     return data
+
+
+def my_construct_mapping(self, node, deep=False):
+    data = self.construct_mapping_org(node, deep)
+
+    return {
+        (str(key) if isinstance(key, int) else key): data[key] for key in data
+    }
 
 
 def get_vars(config):
@@ -428,21 +436,21 @@ def read_config():
 def parse_arguments():
     description = 'Ansible dynamic inventory reading YAML file.'
     epilog = (
-      'environment variables:\n'
-      '  YAML_INVENTORY_CONFIG_PATH\n'
-      '    location of the config file (default locations:\n'
-      '      ./yaml_inventory.conf\n'
-      '      ~/.ansible/yaml_inventory.conf\n'
-      '      /etc/ansible/yaml_inventory.conf)\n'
-      '  YAML_INVENTORY_PATH\n'
-      '    location of the inventory directory (./inventory by default)\n'
-      '  YAML_INVENTORY_VARS_PATH\n'
-      '    location of the inventory vars directory (YAML_INVENTORY_PATH/vars '
-      'by default)\n'
-      '  YAML_INVENTORY_GROUP_VARS_PATH\n'
-      '    location of the vars directory (./group_vars by default)\n'
-      '  YAML_INVENTORY_CREATE_SYMLINKS\n'
-      '    flag to create group_vars symlinks (yes by default)')
+        'environment variables:\n'
+        '  YAML_INVENTORY_CONFIG_PATH\n'
+        '    location of the config file (default locations:\n'
+        '      ./yaml_inventory.conf\n'
+        '      ~/.ansible/yaml_inventory.conf\n'
+        '      /etc/ansible/yaml_inventory.conf)\n'
+        '  YAML_INVENTORY_PATH\n'
+        '    location of the inventory directory (./inventory by default)\n'
+        '  YAML_INVENTORY_VARS_PATH\n'
+        '    location of the inventory vars directory '
+        '(YAML_INVENTORY_PATH/vars by default)\n'
+        '  YAML_INVENTORY_GROUP_VARS_PATH\n'
+        '    location of the vars directory (./group_vars by default)\n'
+        '  YAML_INVENTORY_CREATE_SYMLINKS\n'
+        '    flag to create group_vars symlinks (yes by default)')
 
     parser = argparse.ArgumentParser(
         description=description,
@@ -477,6 +485,10 @@ def main():
 
     # Get config vars
     (inventory_path, vars_path, group_vars_path, symlinks) = get_vars(config)
+
+    # Configure YAML parser
+    yaml.SafeLoader.construct_mapping_org = yaml.SafeLoader.construct_mapping
+    yaml.SafeLoader.construct_mapping = my_construct_mapping
 
     # Read the inventory
     data = read_inventory(inventory_path)
