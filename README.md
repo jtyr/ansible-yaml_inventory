@@ -381,8 +381,10 @@ environment variables:
     location of the inventory vars directory (YAML_INVENTORY_PATH/vars by default)
   YAML_INVENTORY_GROUP_VARS_PATH
     location of the vars directory (./group_vars by default)
+  YAML_INVENTORY_SUPPORT_VAULTS\n'
+    flag to take in account .vault files (yes by default)
   YAML_INVENTORY_CREATE_SYMLINKS
-    flag to create group_vars symlinks (enabled by default)
+    flag to create group_vars symlinks (yes by default)
 ```
 
 ### Combining it with other inventory scripts

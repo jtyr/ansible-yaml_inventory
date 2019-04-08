@@ -19,11 +19,11 @@ import yaml
 log = logging.getLogger(__name__)
 
 
-def create_symlinks(vars_path, group_vars_path, inv):
-    for root, dirs, files in os.walk(vars_path):
+def create_symlinks(cfg, inv):
+    for root, dirs, files in os.walk(cfg['vars_path']):
         for f in files:
             src = "%s/%s" % (root, f)
-            src_list = src[len(vars_path)+1:].split('/')
+            src_list = src[len(cfg['vars_path'])+1:].split('/')
 
             # Ignore dotted (e.g. ".git")
             if src_list[0].startswith('.'):
@@ -52,7 +52,7 @@ def create_symlinks(vars_path, group_vars_path, inv):
 
             # Ignore files which are not groups
             if src_list[0] in ['all', 'all.vault'] or src_list_s in inv.keys():
-                dst.append("%s/%s" % (group_vars_path, src_list_s))
+                dst.append("%s/%s" % (cfg['group_vars_path'], src_list_s))
 
             # Add templates into the dst list
             for ig in inv.keys():
@@ -60,7 +60,7 @@ def create_symlinks(vars_path, group_vars_path, inv):
                     g, t = ig.split('@')
 
                     if t == src_list_s:
-                        dst.append("%s/%s" % (group_vars_path, ig))
+                        dst.append("%s/%s" % (cfg['group_vars_path'], ig))
 
             # Create all destination symlinks
             for d in dst:
@@ -85,7 +85,7 @@ def create_symlinks(vars_path, group_vars_path, inv):
                     sys.exit(1)
 
 
-def read_vars_file(inv, group, vars_path, symlinks, vars_always=False):
+def read_vars_file(inv, group, cfg, vars_always=False):
     g = group
 
     # Get template name
@@ -96,7 +96,7 @@ def read_vars_file(inv, group, vars_path, symlinks, vars_always=False):
     if g.endswith('.vault'):
         return
 
-    path = "%s/%s" % (vars_path, g.replace('-', '/'))
+    path = "%s/%s" % (cfg['vars_path'], g.replace('-', '/'))
     data = None
 
     # Check if vars file exists
@@ -127,25 +127,27 @@ def read_vars_file(inv, group, vars_path, symlinks, vars_always=False):
                 vars_always or
                 (
                     data is not None and
-                    not symlinks)) and
+                    not cfg['symlinks'])) and
             'vars' not in inv[group]):
         inv[group]['vars'] = {}
 
     # Update the vars with the file data if any
-    if data is not None and not symlinks:
+    if data is not None and not cfg['symlinks']:
         inv[group]['vars'].update(data)
 
 
-def add_param(inv, path, param, val, vars_path, symlinks):
+def add_param(inv, path, param, val, cfg):
     if param.startswith(':'):
         param = param[1:]
 
     _path = list(path)
 
-    if symlinks:
+    if cfg['symlinks'] and cfg['vaults']:
         # Create link g1.vault -> g1
         _path[-1] += '.vault'
-        add_param(inv, _path, 'children', ['-'.join(path)], vars_path, None)
+        cfg_tmp = dict(cfg)
+        cfg_tmp['symlinks'] = None
+        add_param(inv, _path, 'children', ['-'.join(path)], cfg_tmp)
 
         if isinstance(val, list) and len(val) and param == 'children':
             val[0] += '.vault'
@@ -173,11 +175,11 @@ def add_param(inv, path, param, val, vars_path, symlinks):
                 inv[group][param] += val
 
     # Read inventory vars file
-    if not symlinks and symlinks is not None:
-        read_vars_file(inv, group, vars_path, symlinks)
+    if not cfg['symlinks']:
+        read_vars_file(inv, group, cfg)
 
 
-def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
+def walk_yaml(inv, data, cfg, parent=None, path=[]):
     if data is None:
         return
 
@@ -196,8 +198,7 @@ def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
                 _pth[-1] += "@%s" % t
 
                 add_param(
-                    inv, _pth, 'children', ['-'.join(_path)], vars_path,
-                    symlinks)
+                    inv, _pth, 'children', ['-'.join(_path)], cfg)
 
         elif p == ':hosts':
             for h in data[p]:
@@ -214,16 +215,15 @@ def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
 
                     # Add host
                     add_param(
-                        inv, _path, p, [host_name], vars_path,
-                        symlinks)
+                        inv, _path, p, [host_name], cfg)
                 else:
-                    add_param(inv, _path, p, [h], vars_path, symlinks)
+                    add_param(inv, _path, p, [h], cfg)
             else:
                 # Create empty hosts list if :hosts exists but it's empty
-                add_param(inv, _path, p, [], vars_path, symlinks)
+                add_param(inv, _path, p, [], cfg)
 
         elif p == ':vars':
-            add_param(inv, _path, p, data[p], vars_path, symlinks)
+            add_param(inv, _path, p, data[p], cfg)
 
         elif p == ':groups' and ':hosts' in data:
             for g in data[p]:
@@ -233,11 +233,10 @@ def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
                 for h in data[':hosts']:
                     if isinstance(h, dict):
                         add_param(
-                            inv, g_path, 'hosts', [list(h.keys())[0]],
-                            vars_path, symlinks)
+                            inv, g_path, 'hosts', [list(h.keys())[0]], cfg)
                     else:
                         add_param(
-                            inv, g_path, 'hosts', [h], vars_path, symlinks)
+                            inv, g_path, 'hosts', [h], cfg)
 
         elif p == ':add_hosts':
             key = '__YAML_INVENTORY'
@@ -261,14 +260,12 @@ def walk_yaml(inv, data, vars_path, symlinks, parent=None, path=[]):
                     _path[-1] += "@%s" % t
 
                     add_param(
-                        inv, path, 'children', ['-'.join(_path)], vars_path,
-                        symlinks)
+                        inv, path, 'children', ['-'.join(_path)], cfg)
 
             add_param(
-                inv, path, 'children', ['-'.join(path + [g])], vars_path,
-                symlinks)
+                inv, path, 'children', ['-'.join(path + [g])], cfg)
 
-        walk_yaml(inv, data[g], vars_path, symlinks, g, path + [g])
+        walk_yaml(inv, data[g], cfg, g, path + [g])
 
 
 def read_yaml_file(f_path, strip_hyphens=True):
@@ -356,6 +353,7 @@ def my_construct_mapping(self, node, deep=False):
 def get_vars(config):
     cwd = os.getcwd()
     inventory_path = "%s/inventory" % cwd
+    TRUE = ('1', 'yes', 'y', 'true')
 
     # Check if there is the config var specifying the inventory dir
     if config.has_option('paths', 'inventory_path'):
@@ -385,6 +383,21 @@ def get_vars(config):
     if 'YAML_INVENTORY_GROUP_VARS_PATH' in os.environ:
         group_vars_path = os.environ['YAML_INVENTORY_GROUP_VARS_PATH']
 
+    vaults = True
+
+    # Check if there is the config var specifying the support_vaults flag
+    if config.has_option('features', 'support_vaults'):
+        try:
+            vaults = config.getboolean('features', 'support_vaults')
+        except ValueError as e:
+            log.error("E: Wrong value of the support_vaults option.\n%s" % e)
+
+    # Check if there is the env var specifying the support_vaults flag
+    if (
+            'YAML_INVENTORY_SUPPORT_VAULTS' in os.environ and
+            os.environ['YAML_INVENTORY_SUPPORT_VAULTS'].lower() not in TRUE):
+        vaults = False
+
     symlinks = True
 
     # Check if there is the config var specifying the create_symlinks flag
@@ -397,11 +410,18 @@ def get_vars(config):
     # Check if there is the env var specifying the create_symlinks flag
     if (
             'YAML_INVENTORY_CREATE_SYMLINKS' in os.environ and
-            os.environ['YAML_INVENTORY_CREATE_SYMLINKS'].lower() not in [
-                '1', 'yes', 'y', 'true']):
+            os.environ['YAML_INVENTORY_CREATE_SYMLINKS'].lower() not in TRUE):
         symlinks = False
 
-    return inventory_path, vars_path, group_vars_path, symlinks
+    cfg = {
+        'inventory_path': inventory_path,
+        'vars_path': vars_path,
+        'group_vars_path': group_vars_path,
+        'symlinks': symlinks,
+        'vaults': vaults,
+    }
+
+    return cfg
 
 
 def read_config():
@@ -449,6 +469,8 @@ def parse_arguments():
         '(YAML_INVENTORY_PATH/vars by default)\n'
         '  YAML_INVENTORY_GROUP_VARS_PATH\n'
         '    location of the vars directory (./group_vars by default)\n'
+        '  YAML_INVENTORY_SUPPORT_VAULTS\n'
+        '    flag to take in account .vault files (yes by default)\n'
         '  YAML_INVENTORY_CREATE_SYMLINKS\n'
         '    flag to create group_vars symlinks (yes by default)')
 
@@ -484,14 +506,14 @@ def main():
     config = read_config()
 
     # Get config vars
-    (inventory_path, vars_path, group_vars_path, symlinks) = get_vars(config)
+    cfg = get_vars(config)
 
     # Configure YAML parser
     yaml.SafeLoader.construct_mapping_org = yaml.SafeLoader.construct_mapping
     yaml.SafeLoader.construct_mapping = my_construct_mapping
 
     # Read the inventory
-    data = read_inventory(inventory_path)
+    data = read_inventory(cfg['inventory_path'])
 
     # Initiate the dynamic inventory
     dyn_inv = {
@@ -507,8 +529,7 @@ def main():
             dict((k, v) for k, v in data.items() if (
                 k[0] != ':' or
                 k[0] != ':vars')),
-            vars_path,
-            symlinks)
+            cfg)
 
     # Add hosts by regexp
     if '__YAML_INVENTORY' in dyn_inv:
@@ -525,15 +546,15 @@ def main():
                             if re.match(pattern, host):
                                 add_param(
                                     dyn_inv, re_data['path'], 'hosts', [host],
-                                    vars_path, symlinks)
+                                    cfg)
 
         # Clear the regexp data
         tmp_inv = None
         dyn_inv.pop('__YAML_INVENTORY', None)
 
     # Create group_vars symlinks if enabled
-    if symlinks:
-        create_symlinks(vars_path, group_vars_path, dyn_inv)
+    if cfg['symlinks']:
+        create_symlinks(cfg, dyn_inv)
 
     # Get the host's vars if requested
     if args.host is not None:
