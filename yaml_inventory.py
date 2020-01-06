@@ -254,16 +254,17 @@ def walk_yaml(inv, data, cfg, parent=None, path=[]):
 
     for g in groups:
         if parent is not None:
-            if data[g] is not None and ':templates' in data[g]:
-                for t in data[g][':templates']:
-                    _path = list(path + [g])
-                    _path[-1] += "@%s" % t
+            if ':templates' in data[g]:
+                if data[g] is not None:
+                    for t in data[g][':templates']:
+                        _path = list(path + [g])
+                        _path[-1] += "@%s" % t
 
-                    add_param(
-                        inv, path, 'children', ['-'.join(_path)], cfg)
-
-            add_param(
-                inv, path, 'children', ['-'.join(path + [g])], cfg)
+                        add_param(
+                            inv, path, 'children', ['-'.join(_path)], cfg)
+            else:
+                add_param(
+                    inv, path, 'children', ['-'.join(path + [g])], cfg)
 
         walk_yaml(inv, data[g], cfg, g, path + [g])
 
